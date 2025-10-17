@@ -80,24 +80,44 @@ document.getElementById('pickfile').addEventListener('change', async (e)=>{
 })();
 
 // --- camera & scanning (BarcodeDetector only; simplest, offline) ---
-async function scan(){
-  if (!('BarcodeDetector' in window)) { setStatus('BarcodeDetector not supported on this device.'); return; }
-  const formats = await BarcodeDetector.getSupportedFormats();
-  if (!formats.includes('data_matrix')) { setStatus('DataMatrix not supported on this device.'); return; }
-
-  const det = new BarcodeDetector({formats:['data_matrix','qr_code']});
-  const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+async function scan() {
   const video = document.getElementById('video');
-  video.srcObject = stream; await video.play();
-  setStatus('Scanning…');
 
-  (function tick(){
-    createImageBitmap(video).then(async bmp=>{
-      const codes = await det.detect(bmp);
-      if (codes.length) handleCode(codes[0].rawValue);
-      requestAnimationFrame(tick);
-    }).catch(()=>requestAnimationFrame(tick));
-  })();
+  // 1️⃣ Try native BarcodeDetector (if supported)
+  if ('BarcodeDetector' in window) {
+    try {
+      const formats = await BarcodeDetector.getSupportedFormats();
+      if (formats.includes('data_matrix')) {
+        const det = new BarcodeDetector({formats:['data_matrix','qr_code']});
+        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+        video.srcObject = stream; await video.play();
+        setStatus('Scanning (native)…');
+        (function tick(){
+          createImageBitmap(video).then(async bmp=>{
+            const codes = await det.detect(bmp);
+            if (codes.length) handleCode(codes[0].rawValue);
+            requestAnimationFrame(tick);
+          }).catch(()=>requestAnimationFrame(tick));
+        })();
+        return;
+      }
+    } catch (err) { console.warn('Native detector failed:', err); }
+  }
+
+  // 2️⃣ Fallback: ZXing (works on iOS)
+  try {
+    if (!window.ZXing) throw new Error('ZXing not loaded');
+    const reader = new ZXing.BrowserMultiFormatReader();
+    const devices = await reader.listVideoInputDevices();
+    const backCam = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[0];
+    setStatus('Scanning (ZXing)…');
+    await reader.decodeFromVideoDevice(backCam?.deviceId, video, (res, err) => {
+      if (res) handleCode(res.getText());
+    });
+  } catch (err) {
+    console.error(err);
+    setStatus('No camera scanning support available.');
+  }
 }
 
 async function handleCode(raw){
