@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f172a">
+  <title>Biobank Scanner</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;margin:16px;max-width:720px}
+    header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .row{margin:8px 0}
+    .ok{color:#0a7a0a;font-weight:600}
+    .err{color:#b00020;font-weight:600}
+    video{width:100%;max-width:520px;background:#000;border-radius:12px}
+    input,button{padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1}
+    .chips input{width:7.5rem}
+    .bar{display:flex;gap:8px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <header>
+    <h1 style="margin:0">Biobank Scanner</h1>
+    <span id="appver" style="opacity:.6"></span>
+  </header>
+
+  <div class="row bar">
+    <label><input type="radio" name="mode" value="pick" checked> Picklist</label>
+    <label><input type="radio" name="mode" value="free"> Free-scan</label>
+    <button id="start">Start scanner</button>
+    <button id="download">Download CSV</button>
+    <input type="file" id="pickfile" accept=".json" />
+  </div>
+
+  <div class="row chips" id="ctx">
+    <input id="ctx_freezer" placeholder="Freezer (opt)">
+    <input id="ctx_rack" placeholder="Rack (opt)">
+    <input id="ctx_box" placeholder="Box (opt)">
+    <input id="ctx_pos" placeholder="Pos (e.g. C07)">
+  </div>
+
+  <p id="status">Idle</p>
+  <video id="video" playsinline muted></video>
+  <div id="result" class="row"></div>
+
+  <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js');}</script>
+  <script src="./app.js"></script>
+</body>
+</html>
