@@ -1,7 +1,7 @@
 // --- version (bump when you change assets) ---
 const APP_VERSION = '1.0.0';
 document.getElementById('appver').textContent = `v${APP_VERSION}`;
-
+const MAX_VISIBLE_LOG = 10;   // show only the last 10 scans in UI
 // --- tiny IndexedDB helper ---
 const DB_NAME='biobank_pick'; const STORE='scans'; const META='meta';
 function idb() { return new Promise((res,rej)=>{
