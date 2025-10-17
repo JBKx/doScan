@@ -150,6 +150,19 @@ async function handleCode(raw){
   };
   await put(STORE, entry);
   flash(`${dup?'DUP':'OK'} ${tube}` + (entry.freezer?` → ${entry.freezer}/${entry.rack}/${entry.box}/${entry.pos}`:''), dup?'err':'ok');
+  // play short beep
+try {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(880, ctx.currentTime); // pitch
+  osc.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.1); // 100 ms beep
+} catch (_) {}
+
+// light vibration if available
+if (navigator.vibrate) navigator.vibrate(80);
 }
 
 // --- CSV export (offline) ---
