@@ -1,0 +1,154 @@
+// --- version (bump when you change assets) ---
+const APP_VERSION = '1.0.0';
+document.getElementById('appver').textContent = `v${APP_VERSION}`;
+
+// --- tiny IndexedDB helper ---
+const DB_NAME='biobank_pick'; const STORE='scans'; const META='meta';
+function idb() { return new Promise((res,rej)=>{
+  const req = indexedDB.open(DB_NAME, 2);
+  req.onupgradeneeded = ()=>{ const db=req.result;
+    if (!db.objectStoreNames.contains(STORE)) {
+      const s=db.createObjectStore(STORE,{keyPath:'id',autoIncrement:true});
+      s.createIndex('by_tube_id','tube_id',{unique:false});
+    } else {
+      const s=req.transaction.objectStore(STORE);
+      if (!s.indexNames.contains('by_tube_id')) s.createIndex('by_tube_id','tube_id',{unique:false});
+    }
+    if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
+  };
+  req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error);
+});}
+async function put(store, val){ const db=await idb();
+  return new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).put(val);
+    tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error);});
+}
+async function getAll(store){ const db=await idb();
+  return new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const req=tx.objectStore(store).getAll();
+    req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error);});
+}
+async function setMeta(k,v){ const db=await idb();
+  return new Promise((res,rej)=>{ const tx=db.transaction(META,'readwrite'); tx.objectStore(META).put(v,k);
+    tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error);});
+}
+async function getMeta(k){ const db=await idb();
+  return new Promise((res,rej)=>{ const tx=db.transaction(META,'readonly'); const req=tx.objectStore(META).get(k);
+    req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error);});
+}
+async function hasTube(tube){
+  const db = await idb();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(STORE,'readonly');
+    const idx=tx.objectStore(STORE).index('by_tube_id');
+    const req=idx.get(tube);
+    req.onsuccess=()=>res(!!req.result); req.onerror=()=>rej(req.error);
+  });
+}
+
+// --- state & helpers ---
+let pickIndex = new Map(), picked = new Set();
+const $ = sel => document.querySelector(sel);
+const norm = s => String(s||'').trim().toUpperCase();
+const nowISO = ()=> new Date().toISOString();
+const mode = ()=> document.querySelector('input[name="mode"]:checked')?.value || 'pick';
+const ctxVal = id => document.getElementById(id).value.trim();
+
+function flash(msg, cls){
+  const p = document.createElement('p'); p.className = cls; p.textContent = msg;
+  document.getElementById('result').prepend(p);
+}
+function setStatus(msg){ document.getElementById('status').textContent = msg; }
+
+// --- picklist loading (offline via file picker) ---
+document.getElementById('pickfile').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const text = await file.text(); const rows = JSON.parse(text);
+  pickIndex.clear(); rows.forEach(r=> pickIndex.set(norm(r.tube_id), r));
+  await setMeta('picklist', rows);
+  await setMeta('picklist_id', rows[0]?.picklist_id || file.name);
+  flash(`Picklist loaded: ${pickIndex.size} tubes`, 'ok');
+});
+
+// restore picklist + operator on startup
+(async ()=>{
+  const cached = await getMeta('picklist');
+  if (cached?.length) cached.forEach(r=> pickIndex.set(norm(r.tube_id), r));
+  if(!await getMeta('operator')){
+    const op = prompt('Operator initials?','');
+    if (op) await setMeta('operator', op);
+  }
+  if (!(cached?.length)) { document.querySelector('input[name="mode"][value="free"]').checked = true; }
+})();
+
+// --- camera & scanning (BarcodeDetector only; simplest, offline) ---
+async function scan(){
+  if (!('BarcodeDetector' in window)) { setStatus('BarcodeDetector not supported on this device.'); return; }
+  const formats = await BarcodeDetector.getSupportedFormats();
+  if (!formats.includes('data_matrix')) { setStatus('DataMatrix not supported on this device.'); return; }
+
+  const det = new BarcodeDetector({formats:['data_matrix','qr_code']});
+  const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+  const video = document.getElementById('video');
+  video.srcObject = stream; await video.play();
+  setStatus('Scanning…');
+
+  (function tick(){
+    createImageBitmap(video).then(async bmp=>{
+      const codes = await det.detect(bmp);
+      if (codes.length) handleCode(codes[0].rawValue);
+      requestAnimationFrame(tick);
+    }).catch(()=>requestAnimationFrame(tick));
+  })();
+}
+
+async function handleCode(raw){
+  const tube = norm(raw);
+  const m = mode();
+
+  // picklist mode (if list loaded)
+  if (m==='pick' && pickIndex.size){
+    const rec = pickIndex.get(tube);
+    const entry = {
+      ts: nowISO(), tube_id: tube, mode:'pick',
+      result: rec ? 'ok' : 'not_in_picklist',
+      freezer: rec?.freezer || '', rack: rec?.rack || '', box: rec?.box || '', pos: rec?.pos || '',
+      picklist_id: (await getMeta('picklist_id')) || '',
+      operator: (await getMeta('operator')) || '', device: navigator.userAgent
+    };
+    await put(STORE, entry);
+    flash(entry.result==='ok' ? `OK ${tube} → ${entry.freezer}/${entry.rack}/${entry.box}/${entry.pos}`
+                              : `NOT IN PICKLIST: ${tube}`,
+         entry.result==='ok' ? 'ok' : 'err');
+    return;
+  }
+
+  // free-scan mode
+  const dup = await hasTube(tube);
+  const entry = {
+    ts: nowISO(), tube_id: tube, mode:'free_scan', result: dup ? 'duplicate' : 'new',
+    freezer: ctxVal('ctx_freezer'), rack: ctxVal('ctx_rack'), box: ctxVal('ctx_box'), pos: ctxVal('ctx_pos'),
+    operator: (await getMeta('operator')) || '', device: navigator.userAgent
+  };
+  await put(STORE, entry);
+  flash(`${dup?'DUP':'OK'} ${tube}` + (entry.freezer?` → ${entry.freezer}/${entry.rack}/${entry.box}/${entry.pos}`:''), dup?'err':'ok');
+}
+
+// --- CSV export (offline) ---
+document.getElementById('download').addEventListener('click', async ()=>{
+  const log = await getAll(STORE);
+  const header = ['timestamp','tube_id','mode','result','freezer','rack','box','pos','picklist_id','operator','device'];
+  const rows = log.map(r=>[r.ts,r.tube_id,r.mode,r.result,r.freezer||'',r.rack||'',r.box||'',r.pos||'',r.picklist_id||'',r.operator||'',r.device||'']);
+  const esc = v => `"${String(v??'').replace(/"/g,'""')}"`;
+  const csv = [header, ...rows].map(r=>r.map(esc).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+
+  // Web Share (Android) else download
+  if (navigator.canShare && navigator.canShare({files:[new File([blob],'scan_log.csv',{type:'text/csv'})]})) {
+    try { await navigator.share({files:[new File([blob],'scan_log.csv',{type:'text/csv'})], title:'Scan Log'}); return; } catch {}
+  }
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), {href:url, download:`scan_log_${Date.now()}.csv`});
+  a.click(); URL.revokeObjectURL(url);
+});
+
+// --- UI wiring ---
+document.getElementById('start').addEventListener('click', scan);
