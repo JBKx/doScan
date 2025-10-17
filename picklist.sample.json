@@ -1,0 +1,18 @@
+[
+  {
+    "picklist_id": "DOBERMANN_2025-10-17_AM",
+    "tube_id": "A1B2C3D4",
+    "freezer": "FZ01",
+    "rack": "R03",
+    "box": "BX17",
+    "pos": "C07"
+  },
+  {
+    "picklist_id": "DOBERMANN_2025-10-17_AM",
+    "tube_id": "E5F6G7H8",
+    "freezer": "FZ02",
+    "rack": "R01",
+    "box": "BX05",
+    "pos": "A11"
+  }
+]
