@@ -134,7 +134,7 @@ async function handleCode(raw){
       picklist_id: (await getMeta('picklist_id')) || '',
       operator: (await getMeta('operator')) || '', device: navigator.userAgent
     };
-    await put(STORE, entry);
+    await upsertScanUnique(entry, 'first'); // or 'last' if you prefer the latest scan to win
     flash(entry.result==='ok' ? `OK ${tube} → ${entry.freezer}/${entry.rack}/${entry.box}/${entry.pos}`
                               : `NOT IN PICKLIST: ${tube}`,
          entry.result==='ok' ? 'ok' : 'err');
@@ -148,7 +148,7 @@ async function handleCode(raw){
     freezer: ctxVal('ctx_freezer'), rack: ctxVal('ctx_rack'), box: ctxVal('ctx_box'), pos: ctxVal('ctx_pos'),
     operator: (await getMeta('operator')) || '', device: navigator.userAgent
   };
-  await put(STORE, entry);
+  await upsertScanUnique(entry, 'first'); // or 'last' if you prefer the latest scan to win
   flash(`${dup?'DUP':'OK'} ${tube}` + (entry.freezer?` → ${entry.freezer}/${entry.rack}/${entry.box}/${entry.pos}`:''), dup?'err':'ok');
   // play short beep
 try {
