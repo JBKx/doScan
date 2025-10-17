@@ -53,8 +53,16 @@ const mode = ()=> document.querySelector('input[name="mode"]:checked')?.value ||
 const ctxVal = id => document.getElementById(id).value.trim();
 
 function flash(msg, cls){
-  const p = document.createElement('p'); p.className = cls; p.textContent = msg;
-  document.getElementById('result').prepend(p);
+  const res = document.getElementById('result');
+  const p = document.createElement('p');
+  p.className = cls;
+  p.textContent = msg;
+  res.prepend(p);
+
+  // 🧹 limit the visible log
+  while (res.childElementCount > MAX_VISIBLE_LOG) {
+    res.removeChild(res.lastElementChild);
+  }
 }
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
 
