@@ -185,3 +185,31 @@ document.getElementById('download').addEventListener('click', async ()=>{
 
 // --- UI wiring ---
 document.getElementById('start').addEventListener('click', scan);
+
+async function upsertScanUnique(entry, keep='first'){ // 'first' or 'last'
+  const db = await idb();
+  return new Promise((res, rej)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const idx = store.index('by_tube_id');
+
+    // Look up existing row for this tube_id
+    const req = idx.openCursor(entry.tube_id);
+    req.onsuccess = () => {
+      const cur = req.result;
+      if (cur) {
+        if (keep === 'last') {
+          // merge into existing (preserve id)
+          const updated = { ...cur.value, ...entry };
+          cur.update(updated);
+        }
+        // keep === 'first' -> do nothing (skip new duplicate)
+        res();
+      } else {
+        store.add(entry);
+        res();
+      }
+    };
+    req.onerror = () => rej(req.error);
+  });
+}
